@@ -1,0 +1,427 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no" />
+<meta name="theme-color" content="#11172c" />
+<title>雨の街角 · HOSHI MART</title>
+<style>
+  *{box-sizing:border-box} html,body{width:100%;height:100%;margin:0;overflow:hidden}
+  body{background:radial-gradient(ellipse at 53% 42%,#344260 0%,#18243d 45%,#0c1428 100%);touch-action:none;cursor:grab}
+  body:active{cursor:grabbing} canvas{display:block;width:100%;height:100%;outline:none}
+  body::after{content:"";position:fixed;inset:0;pointer-events:none;box-shadow:inset 0 0 140px 25px #080e2059}
+</style>
+</head>
+<body>
+<!-- A single HTML document. Three.js is loaded from a CDN; an Internet connection is required. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.152.2/three.min.js"></script>
+<script>
+(() => {
+'use strict';
+if(!window.THREE){document.body.style.background='#10182b';console.error('Three.js CDN was not reachable.');return;}
+const T=THREE;
+const scene=new T.Scene(); scene.background=new T.Color(0x131d35); scene.fog=new T.FogExp2(0x131d35,.015);
+const renderer=new T.WebGLRenderer({antialias:true,alpha:true,powerPreference:'high-performance'});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,1.7));renderer.setSize(innerWidth,innerHeight);
+renderer.shadowMap.enabled=true; renderer.shadowMap.type=T.PCFSoftShadowMap;
+renderer.toneMapping=T.ACESFilmicToneMapping; renderer.toneMappingExposure=1.38;
+renderer.outputColorSpace=T.SRGBColorSpace;
+renderer.setClearColor(0x15213b,1);
+document.body.appendChild(renderer.domElement);
+const camera=new T.OrthographicCamera(-13,13,13,-13,.1,110);
+let theta=.79,phi=1.16,desiredTheta=theta,desiredPhi=phi,radius=23,desiredRadius=radius;
+let look=new T.Vector3(-.1,2.35,0),targetLook=look.clone();
+const root=new T.Group();scene.add(root);
+const PI=Math.PI, TAU=PI*2;
+const mat=(c,rough=.8,metal=0)=>new T.MeshStandardMaterial({color:c,roughness:rough,metalness:metal});
+const em=(c,intensity=1,rough=.5)=>new T.MeshStandardMaterial({color:c,emissive:c,emissiveIntensity:intensity,roughness:rough});
+const glass=new T.MeshPhysicalMaterial({color:0xc2eaff,transparent:true,opacity:.19,metalness:.08,roughness:.07,depthWrite:false,side:T.DoubleSide});
+const C={base:mat('#26344b',.55),edge:mat('#141b2d',.35),asphalt:mat('#26394c',.24,.22),pavement:mat('#667280',.68),line:mat('#ded8ba',.32),wall:mat('#d5d0c5'),tile:mat('#e5e2d2',.63),frame:mat('#536677',.3,.5),darkFrame:mat('#252d3f',.39,.35),white:mat('#fff7dc',.55),navy:mat('#0b4165',.4),roof:mat('#35506a',.54),orange:em('#ffbd79',.65),cyan:em('#58dcee',.82),pink:em('#fa8baf',.4),green:mat('#4b8f80',.47),yellow:em('#ffce70',.5),wet:new T.MeshPhysicalMaterial({color:0x4c637b,metalness:.37,roughness:.16,transparent:true,opacity:.42,depthWrite:false}),rubber:mat('#1b2634')};
+const bGeo=new T.BoxGeometry(1,1,1), planeGeo=new T.PlaneGeometry(1,1);
+const cylinderCache={};
+function mesh(g,m,parent=root){let o=new T.Mesh(g,m);parent.add(o);return o;}
+function box(w,h,d,x,y,z,m,parent=root){let o=mesh(bGeo,m,parent);o.scale.set(w,h,d);o.position.set(x,y,z);o.castShadow=true;o.receiveShadow=true;return o;}
+function plane(w,h,x,y,z,m,rx=-PI/2,parent=root){let o=mesh(planeGeo,m,parent);o.scale.set(w,h,1);o.position.set(x,y,z);o.rotation.x=rx;o.receiveShadow=true;return o;}
+function cy(r1,r2,h,x,y,z,m,ns=12,parent=root){let o=mesh(new T.CylinderGeometry(r1,r2,h,ns),m,parent);o.position.set(x,y,z);o.castShadow=true;return o;}
+function sphere(r,x,y,z,m,ns=12,parent=root){let o=mesh(new T.SphereGeometry(r,ns,9),m,parent);o.position.set(x,y,z);return o;}
+function rod(a,b,r,m,parent=root,segments=8){let aa=new T.Vector3(...a),bb=new T.Vector3(...b),v=bb.clone().sub(aa);let o=mesh(new T.CylinderGeometry(r,r,v.length(),segments),m,parent);o.position.copy(aa.add(bb).multiplyScalar(.5));o.quaternion.setFromUnitVectors(new T.Vector3(0,1,0),v.normalize());o.castShadow=true;return o;}
+function line(points,m,r=.016,parent=root){let curve=new T.CatmullRomCurve3(points.map(p=>new T.Vector3(...p)));return mesh(new T.TubeGeometry(curve,24,r,5,false),m,parent);}
+function ring(r,x,y,z,m){let o=mesh(new T.TorusGeometry(r,.026,5,36),m);o.position.set(x,y,z);return o;}
+function glowTexture(){let c=document.createElement('canvas');c.width=c.height=128;let ctx=c.getContext('2d'),g=ctx.createRadialGradient(64,64,1,64,64,64);g.addColorStop(0,'rgba(255,245,197,0.89)');g.addColorStop(.18,'rgba(253,205,142,.54)');g.addColorStop(.55,'rgba(247,159,126,.13)');g.addColorStop(1,'rgba(255,140,110,0)');ctx.fillStyle=g;ctx.fillRect(0,0,128,128);return new T.CanvasTexture(c);}
+const glowMap=glowTexture();
+function halo(x,y,z,w,h,color=0xffffff,opacity=.48,parent=root){let m=new T.SpriteMaterial({map:glowMap,color,transparent:true,opacity,depthWrite:false,blending:T.AdditiveBlending});let s=new T.Sprite(m);s.position.set(x,y,z);s.scale.set(w,h,1);parent.add(s);return s;}
+function signTexture(text,sub='',options={}){let W=1024,H=256,c=document.createElement('canvas');c.width=W;c.height=H;let q=c.getContext('2d');let bg=options.bg||'#fff9e8';q.fillStyle=bg;q.fillRect(0,0,W,H);
+ if(options.stripes){q.fillStyle='#ff805a';q.fillRect(0,0,W,14);q.fillStyle='#55b6a8';q.fillRect(0,H-19,W,19);}
+ q.textAlign='center';q.textBaseline='middle';q.fillStyle=options.fg||'#24324c';q.font=`bold ${options.fontSize||122}px Arial, "Noto Sans JP", sans-serif`;q.fillText(text,W/2,sub?H*.40:H*.52);
+ if(sub){q.font='bold 42px Arial, "Noto Sans JP", sans-serif';q.fillStyle=options.subcolor||'#66818b';q.fillText(sub,W/2,H*.78);}
+ const tx=new T.CanvasTexture(c);tx.colorSpace=T.SRGBColorSpace;tx.anisotropy=8;return tx;}
+function panel(w,h,x,y,z,text,sub='',opts={}){let t=signTexture(text,sub,opts);let m=new T.MeshBasicMaterial({map:t,side:T.DoubleSide,transparent:false});let o=plane(w,h,x,y,z,m,0);o.rotation.y=opts.rotY||0;return o;}
+function addLight(c,intensity,x,y,z,distance=10,shadow=false){let l=new T.PointLight(c,intensity,distance,2);l.position.set(x,y,z);if(shadow){l.castShadow=true;l.shadow.mapSize.set(1024,1024);l.shadow.bias=-.0004;l.shadow.radius=3;}scene.add(l);return l;}
+scene.add(new T.HemisphereLight(0xadc6f7,0x34374c,1.65));
+let moon=new T.DirectionalLight(0x9cb6f9,2.1);moon.position.set(-11,20,15);moon.castShadow=true;moon.shadow.mapSize.set(2048,2048);moon.shadow.camera.left=-14;moon.shadow.camera.right=14;moon.shadow.camera.top=14;moon.shadow.camera.bottom=-14;moon.shadow.bias=-.0003;scene.add(moon);
+// THE SQUARE COLLECTIBLE BASE
+box(16.1,.65,16.1,0,.015,0,C.edge);
+box(16.23,.12,16.23,0,.32,0,em('#3c586e',.12));
+box(15.94,.085,15.94,0,.42,0,C.asphalt);
+// illuminated perimeter detailing
+for(let z of [-8.06,8.06])box(16.15,.026,.035,0,.33,z,em('#8ba1a6',.22));
+for(let x of [-8.06,8.06])box(.035,.026,16.15,x,.33,0,em('#8ba1a6',.22));
+// low water films and specular paint across street
+const pools=[]; const puddleM=new T.MeshBasicMaterial({color:0x99cfe6,transparent:true,opacity:.17,depthWrite:false,side:T.DoubleSide});
+function puddle(x,z,w,h,a=.15){let o=plane(w,h,x,.475,z,puddleM.clone());o.material.opacity=a; o.rotation.z=Math.random()*2;pools.push(o);return o;}
+for(let p of [[-5.6,4.45,2.4,.66],[-1.8,5.8,2.7,.75],[2.5,6.1,1.6,.52],[5.55,1.45,.8,2.65],[4.55,-3.6,.75,1.8],[.4,3.7,2.2,.48],[6.7,5.9,1.3,.6],[-6,6.5,1.3,.56]])puddle(...p,.11);
+// ROAD: sidewalks describe a clear L-shaped street corner
+box(10.0,.13,7.85,-2.65,.535,-2.55,C.pavement); // storefront block
+box(1.18,.08,10.3,3.06,.50,-2.55,C.pavement);
+box(10.3,.1,1.48,-2.70,.57,2.53,C.pavement);
+// sidewalk expansion joints
+for(let x=-7.65;x<2.6;x+=1.2)box(.022,.008,1.37,x,.629,2.53,mat('#3b4758'));
+for(let z=-6.5;z<1.7;z+=1.2)box(1.12,.012,.018,3.05,.56,z,mat('#3b4758'));
+// dark curb boundaries
+box(11,.18,.15,-2.52,.49,3.26,mat('#354659'));
+box(.15,.18,10.5,3.66,.49,-2.22,mat('#354659'));
+// draining gutters and steel grills
+box(10.5,.012,.18,-2.4,.48,3.41,mat('#172d40',.3,.55));
+for(let x=-7.4;x<2.7;x+=.34)box(.028,.014,.14,x,.49,3.41,mat('#637b83',.37,.6));
+box(.18,.015,5.1,3.89,.48,-3.8,mat('#172d40'));
+for(let z=-6.35;z<-1.55;z+=.34)box(.14,.014,.025,3.89,.49,z,mat('#637b83'));
+// zebra crosswalk - around the street corner
+for(let i=0;i<8;i++){
+ let x=-4.65+i*.91;box(.57,.017,1.23,x,.483,4.49,C.line);
+}
+for(let i=0;i<5;i++){let z=-2.3+i*.94;box(1.23,.017,.56,5.1,.482,z,C.line);}
+for(let i=0;i<5;i++)box(.78,.012,.045,-6.2+i*2.55,.48,6.65,em('#f2d9a0',.18));
+for(let z=-5.8;z<.65;z+=1.8)box(.06,.009,.78,6.38,.477,z,C.line);
+// parking bay lines
+box(2.8,.02,.05,-5.35,.48,6.32,C.line);box(.05,.02,1.78,-6.73,.48,5.45,C.line);
+// corner tactile paving
+let tactile=mat('#d5b56a');box(1.38,.038,.52,1.35,.643,3.06,tactile);for(let i=0;i<5;i++)for(let j=0;j<2;j++)sphere(.034,.82+i*.22,.672,2.89+j*.27,em('#e2cf8b',.08),7);
+// STOREFRONT ARCHITECTURE AND WARM ROOM
+let shop=new T.Group();root.add(shop);
+const wall=C.wall;
+box(8.1,.17,7.13,-1.64,.67,-2.17,C.tile,shop); // interior floor
+// small floor tiles on visible interior
+for(let x=-5.50;x<2.2;x+=.76)box(.013,.003,6.9,x,.763,-2.20,mat('#c9c8bf'),shop);
+for(let z=-5.55;z<1.1;z+=.76)box(7.85,.003,.013,-1.64,.763,z,mat('#c9c8bf'),shop);
+box(8.4,3.74,.21,-1.64,2.65,-5.78,wall,shop); // rear wall
+box(.22,3.65,7.35,-5.78,2.61,-2.12,wall,shop); // left wall
+// right wall has large glass panes
+box(.18,3.6,1.0,2.54,2.55,-5.33,wall,shop);
+box(.18,3.6,.72,2.54,2.55,1.08,wall,shop);
+box(.15,.50,5.4,2.54,4.12,-2.18,wall,shop);
+box(.15,.49,5.4,2.54,1.0,-2.18,wall,shop);
+for(let z of [-4.68,-2.97,-1.24])box(.13,2.85,.1,2.64,2.54,z,C.frame,shop);
+for(let z of [-3.82,-2.07,-.18]){
+ let o=plane(1.7,2.83,2.649,2.54,z,glass,0,shop);o.rotation.y=PI/2;
+}
+// frame on front glass wall
+for(let x of [-5.77,-3.85,-1.91,.68,2.54]) box(.12,3.12,.13,x,2.42,1.5,C.frame,shop);
+box(8.3,.13,.16,-1.62,3.98,1.50,C.frame,shop);box(8.3,.12,.17,-1.62,.90,1.50,C.frame,shop);
+for(let x of [-4.82,-2.88,1.59])plane(1.84,2.96,x,2.45,1.515,glass,0,shop);
+// A sliding 2-panel automatic entrance, with moving frames
+let leftDoor=new T.Group(),rightDoor=new T.Group();shop.add(leftDoor,rightDoor);
+leftDoor.position.set(-1.05,0,0);rightDoor.position.set(-.17,0,0);
+function doorPart(parent){box(.82,2.98,.09,0,2.44,1.54,C.darkFrame,parent);box(.73,2.78,.10,0,2.46,1.59,glass,parent);box(.045,2.97,.12,-.39,2.44,1.62,C.frame,parent);box(.045,2.97,.12,.39,2.44,1.62,C.frame,parent);
+box(.74,.048,.06,0,2.27,1.66,em('#e5e7d9',.18),parent);box(.17,.045,.13,.22,2.26,1.69,em('#d9e8e5',.4),parent);}
+doorPart(leftDoor);doorPart(rightDoor);
+box(2.05,.12,.30,-.61,4.0,1.47,C.darkFrame,shop);
+// ceiling, fascia, layered rooftop silhouette
+box(8.65,.27,7.65,-1.62,4.45,-2.08,mat('#e8e4d4'),shop);
+box(8.85,.32,7.85,-1.62,4.70,-2.06,C.roof,shop);
+box(8.95,.19,7.94,-1.62,4.92,-2.06,C.darkFrame,shop);
+box(9.08,.10,7.98,-1.62,5.07,-2.06,mat('#476078'),shop);
+for(let z of [-5.95,1.78])box(9,.19,.18,-1.62,5.17,z,mat('#314459'),shop);
+for(let x of [-6.1,2.9])box(.17,.19,7.82,x,5.17,-2.08,mat('#314459'),shop);
+// large facade sign and brand stripes, all part of model, never UI
+box(8.75,.77,.22,-1.63,4.18,1.62,em('#ffedc0',.75),shop);
+box(8.75,.11,.25,-1.63,4.55,1.75,em('#ff775b',.78),shop);
+box(8.75,.11,.25,-1.63,3.79,1.75,em('#48d0bb',.78),shop);
+panel(6.6,.60,-1.68,4.19,1.748,'HOSHI MART','ほしマート · 24 HOURS',{bg:'#fff8df',fg:'#204e6a',subcolor:'#518178',fontSize:136});
+// side blade sign
+box(.24,1.65,1.36,2.93,4.01,.78,em('#f8edd6',.7),shop);
+let sideLabel=panel(1.25,1.42,3.07,4.05,.77,'24','OPEN',{bg:'#fff5dd',fg:'#3b7185',fontSize:210});sideLabel.rotation.y=PI/2;
+// atmospheric glow from lamps and interior fixtures
+for(let x of [-4.7,-2.65,-.62,1.40]){box(1.20,.050,.62,x,4.292,-2.24,em('#fff0cc',1.9),shop);halo(x,3.72,-2.25,2.8,1.8,0xffc992,.12,shop);}
+addLight(0xffc991,10.0,-2.5,3.35,-1.5,10,false);addLight(0xffdcac,6.3,1.0,3.3,-3.2,7,false);
+// front eaves and entrance mat
+box(9.05,.14,1.0,-1.62,3.80,1.92,C.roof,shop);
+box(9.02,.056,.10,-1.62,3.73,2.37,em('#6f9fa5',.45),shop);
+box(2.08,.023,.73,-.62,.64,2.01,mat('#284456'),root);
+for(let i=0;i<11;i++)box(.026,.025,.66,-1.55+i*.19,.658,2.01,mat('#416575'));
+// back wall posters, colored ads, price cards
+panel(1.2,1.63,-5.12,2.45,-5.651,'お弁当','新発売',{bg:'#e8bd88',fg:'#795046',fontSize:160});
+panel(1.27,1.25,1.49,2.83,-5.655,'SALE','今週のおすすめ',{bg:'#d4e8df',fg:'#4a766e',fontSize:155});
+box(.74,1.62,.14,2.30,2.22,-4.85,mat('#74818a'),shop); // back room door frame
+box(.61,1.48,.07,2.29,2.19,-4.75,mat('#969f9c'),shop);
+sphere(.044,2.08,2.18,-4.69,em('#e9d6a3',.3),8,shop);
+// Refrigerated beverage wall -- illuminated glass doors and bottles
+function beverageFridge(x,z,w=3.6){box(w,2.62,.76,x,2.10,z,mat('#d9dad4',.43),shop);
+box(w-.14,2.42,.07,x,2.12,z+.401,em('#c2eef4',.65),shop);
+box(w-.23,2.31,.08,x,2.12,z+.45,mat('#395463',.4),shop);
+for(let yy of [1.19,1.70,2.22,2.75,3.21]){
+ box(w-.28,.05,.59,x,yy,z+.15,mat('#dae2e0',.34),shop);
+ for(let xx=x-w/2+.21;xx<x+w/2-.12;xx+=.22){let palette=['#9ac8d5','#66ae9d','#ebba9a','#f3b65c','#d18c89','#f3e4c2'];let color=palette[Math.floor(Math.abs(xx*111+yy*37))%palette.length];
+ cy(.068,.068,.27,xx,yy+.17,z+.17,mat(color,.47),8,shop);box(.12,.06,.13,xx,yy+.323,z+.17,mat('#f5efe3'),shop);
+ }
+}
+for(let dx of [-w/2+.04,0,w/2-.04])box(.035,2.46,.13,x+dx,2.1,z+.5,C.frame,shop);
+}
+beverageFridge(-3.60,-5.06,3.56);
+// full convenience shelves, with product blocks and colorful tiny packaging
+const palettes=['#ffb6a0','#f7d894','#b7d8c6','#94bed0','#d2c6e0','#e9aba4','#ffffff','#86abb2','#eecfa9'];
+function productsOnShelf(x,y,z,w,axis,seed){for(let i=0;i<Math.floor(w/.205);i++){
+ let px=x+(axis==='x'?(i+.5)*.205-w/2:0),pz=z+(axis==='z'?(i+.5)*.205-w/2:0);
+ let col=palettes[(i*5+seed*3)%palettes.length];let hh=.23+((i+seed)%3)*.058;
+ box(axis==='x'?.16:.29,hh,axis==='x'?.30:.155,px,y+hh/2,pz,mat(col,.78),shop);
+ if(i%4===0)box(axis==='x'?.15:.295,.066,axis==='x'?.305:.16,px,y+hh*.74,pz,em('#faf0d0',.08),shop);
+}}
+function aisle(x,z,length=3.45){let side=mat('#c3cdc8',.53),trim=mat('#526474',.49);box(1.16,.115,length,x,1.06,z,side,shop);
+for(let y of [1.31,1.94,2.56]){
+ box(1.25,.072,length,x,y,z,side,shop);
+ for(let zz=z-length/2+.22;zz<z+length/2-.12;zz+=.35){for(let s of [-1,1]){
+ let cc=palettes[(Math.floor(zz*20)+Math.floor(x*7)+Math.floor(y*9)+1000)%palettes.length];
+ box(.28,.25,.245,x+s*.43,y+.165,zz,mat(cc),shop);
+ }}
+}
+for(let zz of [z-length/2+.06,z+length/2-.06]){box(.055,1.78,.075,x-.6,1.82,zz,trim,shop);box(.055,1.78,.075,x+.6,1.82,zz,trim,shop);}
+box(1.26,.13,length,x,2.92,z,C.white,shop);
+}
+aisle(-2.18,-1.75,2.95);
+aisle(.07,-2.50,2.6);
+// front counter, cash register and red hot snack display
+box(2.0,.79,.84,1.06,1.26,.14,mat('#d9cec0',.5),shop);
+box(2.02,.12,.93,1.06,1.72,.14,mat('#57798a',.38),shop);
+box(.45,.31,.31,1.55,1.99,-.04,mat('#444e5d'),shop);
+let reg=panel(.39,.23,1.55,2.03,.127,'¥','',{bg:'#a3e0d1',fg:'#364d56',fontSize:156});reg.rotation.x=-.22;
+for(let i=0;i<8;i++)box(.075,.03,.08,.69+(i%4)*.12,1.817,.23+Math.floor(i/4)*.085,mat('#d4d9d3'),shop);
+box(.58,.62,.48,.12,1.94,.13,mat('#9fa4a0',.28,.16),shop);
+box(.56,.31,.50,.12,2.03,.13,glass,shop);
+for(let i=0;i<7;i++)sphere(.07,-.085+i*.07,1.95,.26,mat('#bb8551'),8,shop);
+box(.28,.48,.3,1.78,2.04,-.43,mat('#4c3f3d',.35),shop); // coffee machine
+box(.20,.12,.10,1.78,2.14,-.25,em('#c3e9df',.35),shop);
+// bento and onigiri warm display at left front
+box(1.65,.74,.82,-4.61,1.27,.25,mat('#b8c2bb',.43),shop);
+box(1.72,.41,.74,-4.60,1.83,.25,glass,shop);
+for(let i=0;i<8;i++)box(.27,.07,.28,-5.18+(i%4)*.39,1.76,.09+Math.floor(i/4)*.28,mat(i%2?'#e2c5a6':'#ddd9c2'),shop);
+for(let i=0;i<6;i++){let x=-5.28+i*.24;sphere(.095,x,2.14,.14,mat('#f5ece0'),8,shop);box(.10,.06,.036,x,2.15,.24,mat('#354b47'),shop);}
+// magazine racks along left-hand wall
+box(.28,1.48,2.3,-5.42,1.54,-1.98,mat('#b3bfba'),shop);
+for(let z=-2.8;z<-1;z+=.39)for(let j=0;j<3;j++){
+ let p=box(.07,.47,.30,-5.26,1.14+j*.44,z,mat(palettes[(Math.abs(Math.floor(z*20))+j)%palettes.length]),shop);p.rotation.z=.14;
+}
+// floor aisle wayfinding and painted directional arrows
+box(.1,.006,.94,-.62,.77,-.55,em('#6bb5a9',.15),shop);
+box(.4,.006,.09,-.62,.772,-.10,em('#6bb5a9',.15),shop);
+// add exterior striped accent to side walls
+for(let z=-4.9;z<.86;z+=2){box(.045,.08,1.75,2.685,3.75,z,em('#53bfb2',.33),shop);}
+// warming indoor lamp glow spilling onto pavement
+plane(6.5,2.1,-1.51,.648,2.06,new T.MeshBasicMaterial({color:0xffc998,transparent:true,opacity:.12,depthWrite:false}),-PI/2);
+// side alley details, rainwater pipes, back unit, posters
+for(let x of [-5.45,2.67]){
+ rod([x,4.38,-5.6],[x,1.02,-5.6],.050,mat('#4d6676',.42),shop);
+ cy(.09,.095,.17,x,1.07,-5.6,mat('#384b5c'),12,shop);
+}
+box(.39,.92,1.05,2.85,2.64,-4.53,mat('#a4b2b3',.6),shop);
+box(.09,.68,.87,3.075,2.58,-4.53,mat('#596e78',.4),shop);
+for(let z=-4.88;z<-4.12;z+=.088)box(.017,.56,.021,3.127,2.56,z,mat('#b7c8c7'),shop);
+box(.13,.23,.29,2.82,1.23,-5.11,mat('#a2b6ae'),shop);
+// vending machine facing the street, with a colorful illuminated display
+let vending=new T.Group();root.add(vending);vending.position.set(2.49,.66,2.31);
+box(.92,1.92,.66,0,.99,0,mat('#e8e7df',.36),vending);
+box(.78,1.20,.051,-.035,1.27,.347,em('#f6fbf4',.5),vending);
+box(.74,.93,.06,-.035,1.37,.39,mat('#587b88',.32),vending);
+for(let row=0;row<4;row++)for(let col=0;col<5;col++){
+ const color=palettes[(row*4+col*3+1)%palettes.length];box(.102,.20,.091,-.31+col*.14,1.68-row*.24,.44,mat(color),vending);
+}
+box(.72,.10,.052,-.035,.74,.39,em('#eaf8ed',.25),vending);
+box(.23,.28,.07,.26,.60,.38,mat('#3c5366'),vending);
+sphere(.035,.24,.62,.43,em('#70d4cf',.7),8,vending);
+box(.49,.14,.075,-.09,.31,.41,C.darkFrame,vending);
+box(.72,.18,.66,0,1.87,0,em('#56b6d3',.7),vending);
+let vendTxt=panel(.74,.18,0,1.88,.346,'DRINKS','',{bg:'#3a9db5',fg:'#fff8e6',fontSize:165});vending.add(vendTxt);
+halo(2.49,2.03,2.77,1.8,2.7,0x74dcf7,.25);
+addLight(0x56cbed,2.7,2.54,2.1,2.77,5,false);
+// umbrella holder, trash cans and an outdoor newspaper board
+function bin(x,z,c){box(.36,.66,.37,x,.94,z,mat(c,.45));box(.40,.065,.41,x,1.30,z,C.darkFrame);box(.20,.014,.19,x,1.339,z,mat('#142433'));}
+bin(-2.37,2.37,'#829ca5');bin(-2.83,2.37,'#6f9b8e');
+box(.51,.53,.32,-1.69,.84,2.30,mat('#6c8790',.44));
+for(let i=0;i<5;i++){
+ let xx=-1.89+i*.105;
+ rod([xx,1.05,2.29],[xx+.018,1.85,2.23],.021,mat(['#b5cee4','#e9bc9e','#b5c8b8'][i%3]));
+ let hook=mesh(new T.TorusGeometry(.095,.021,5,10,PI),mat('#d6e7e3'));
+ hook.position.set(xx+.112,1.86,2.24);hook.rotation.z=PI/2;
+}
+// small utility / information board close to alley
+box(.12,1.55,1.19,3.37,1.52,-.31,mat('#425368'));
+let notice=panel(1.05,1.35,3.449,1.58,-.31,'まち','お知らせ',{bg:'#f1e0bc',fg:'#657780',subcolor:'#697c7c',fontSize:160});notice.rotation.y=PI/2;
+// parked bicycle, no people
+const bike=new T.Group();root.add(bike);bike.position.set(-4.91,.45,2.31);
+const bikeMetal=mat('#9dbac0',.25,.58),bikeBlack=mat('#1d2934',.85);
+for(let x of [-.55,.61]){
+ let wheel=mesh(new T.TorusGeometry(.43,.052,8,38),bikeBlack,bike);wheel.position.set(x,.54,0);
+ for(let k=0;k<8;k++){let a=k*TAU/8;rod([x,.54,0],[x+Math.cos(a)*.39,.54+Math.sin(a)*.39,0],.009,bikeMetal,bike,5);}
+ let hub=cy(.08,.08,.1,x,.54,0,mat('#596d78'),10,bike);hub.rotation.x=PI/2;
+}
+rod([-.55,.54,0],[-.03,1.23,0],.035,bikeMetal,bike);
+rod([-.03,1.23,0],[.61,.54,0],.035,bikeMetal,bike);
+rod([-.55,.54,0],[.22,.60,0],.035,bikeMetal,bike);
+rod([.22,.60,0],[-.03,1.23,0],.035,bikeMetal,bike);
+rod([.61,.54,0],[.45,1.40,0],.031,bikeMetal,bike);
+rod([.35,1.40,0],[.72,1.40,0],.042,bikeBlack,bike);
+rod([-.18,1.27,0],[.07,1.27,0],.052,bikeBlack,bike);
+let basket=box(.56,.38,.40,.82,1.16,0,mat('#617985',.35),bike); basket.castShadow=true;
+for(let i=-2;i<=2;i++)box(.026,.33,.42,.82+i*.105,1.16,0,bikeMetal,bike);
+rod([-.5,.59,.06],[-.7,.15,.08],.023,bikeMetal,bike);
+// street corner fence, parking markers and plant boxes
+const fence=mat('#8799a4',.28,.46);
+for(let x of [-6.84,-6.05,-5.26]){
+ rod([x,.65,3.05],[x,1.49,3.05],.033,fence);
+ if(x!==-5.26)rod([x,1.44,3.05],[x+.79,1.44,3.05],.031,fence);
+}
+for(let z of [-6.48,-5.78]){rod([3.38,.62,z],[3.38,1.41,z],.039,fence);}
+rod([3.38,1.38,-6.48],[3.38,1.38,-5.78],.03,fence);
+function shrub(x,z,s=.7){box(s,.44,s,x,.72,z,mat('#4f6071'));for(let i=0;i<7;i++){
+ const a=i*2.4;let co=mat(i%2?'#487c74':'#568475');
+ sphere(.28*s,x+Math.cos(a)*s*.35,1.05+(i%3)*.13,z+Math.sin(a)*s*.35,co,9);
+}}
+shrub(-7.13,-5.4,.83);shrub(-6.82,-4.7,.55);
+// utility pole and a knot of sagging electric wires
+const pole=mat('#526475',.48),wire=mat('#283e52',.4);
+rod([6.58,.48,-3.28],[6.58,8.21,-3.28],.13,pole);
+for(let y of [6.77,7.38]){
+ rod([5.82,y,-3.28],[7.34,y,-3.28],.075,pole);
+ for(let x of [5.92,6.22,6.93,7.23]){
+ cy(.068,.068,.16,x,y+.08,-3.28,mat('#8196a0'),10);
+ sphere(.045,x,y+.18,-3.28,mat('#b1b7ac'),8);
+ }
+}
+for(let z of [-3.43,-3.07]){
+ line([[6.13,7.50,z],[4.5,7.12,z-.5],[2.70,5.62,z-1.32]],wire,.022);
+ line([[6.98,6.84,z],[7.7,6.33,z+.7],[8.8,6.45,z+2]],wire,.018);
+}
+box(.58,.9,.31,6.45,4.86,-3.14,mat('#899a9c'),root);
+box(.33,.32,.33,6.73,4.0,-3.16,mat('#637b86'),root);
+// bright street lamp and mild fog cone
+rod([-6.85,.55,3.04],[-6.85,6.25,3.04],.092,mat('#5e7185',.45));
+line([[-6.85,6.15,3.04],[-6.6,6.46,3.04],[-5.86,6.48,3.04],[-5.70,6.25,3.04]],mat('#687d8e'),.065);
+box(.52,.17,.40,-5.72,6.18,3.04,em('#ffdfaa',1.8));
+halo(-5.72,6.07,3.05,5.1,5.1,0xffcba2,.65);
+addLight(0xffd0a3,8.2,-5.75,5.89,3.06,9.5,false);
+// second cooler side light
+rod([7.33,.5,2.45],[7.33,3.90,2.45],.073,mat('#607786'));
+box(.33,1.07,.39,7.3,3.73,2.48,mat('#334558'));
+const sig=[];
+for(let k=0;k<3;k++){
+ let m=em(k===0?'#fb6f67':k===1?'#fbd274':'#78d3ae',.01);
+ let o=sphere(.127,7.30,4.04-k*.31,2.70,m,13);sig.push(o);
+}
+// street corner vertical road signage
+rod([5.25,.50,2.70],[5.25,3.50,2.70],.055,mat('#667e8a'));
+box(1.13,.5,.09,5.25,3.11,2.70,mat('#537983'));
+panel(1.07,.44,5.25,3.12,2.757,'止まれ','',{bg:'#4d7c89',fg:'#f8f3e1',fontSize:164});
+// metal post reflectors, drain collar and old lane markings
+for(let x of [-6.8,-5.5,1.5]){
+ cy(.075,.075,.51,x,.77,3.07,mat('#66818d'));
+ cy(.078,.078,.075,x,1.02,3.07,em('#d9c9a5',.28));
+}
+box(1.68,.016,.039,-1.4,.48,7.47,mat('#d0bd97'));
+// ATM-like machine & indoor clock viewed from the side
+box(.57,1.41,.53,1.84,1.48,-3.7,mat('#a5b2ad'),shop);
+box(.06,.32,.35,2.13,1.76,-3.70,em('#accdd0',.36),shop);
+// rain details: shifting emissive decals on glass panes
+let trails=[];
+const streakMat=new T.MeshBasicMaterial({color:0xd1ecfb,transparent:true,opacity:.25,depthWrite:false});
+for(let i=0;i<26;i++){
+ let x=-5.54+(i*2.7%8.0), yy=1.35+(i*1.173%2.14);
+ if(x>-1.55&&x<.4)continue;
+ let len=.20+(i%6)*.085;
+ let o=box(.008,len,.004,x,yy,1.638,streakMat.clone());o.castShadow=false;trails.push({o,base:yy,speed:.09+(i%5)*.025});
+}
+// roof droplets that form, fall, and repeat
+const roofDrops=[];for(let i=0;i<30;i++){
+ let x=-6.04+i*.30;let m=new T.MeshBasicMaterial({color:i%2?0x83cbe5:0xd6e9f3,transparent:true,opacity:.48});
+ let o=mesh(new T.SphereGeometry(.025,5,5),m);o.scale.set(.8,2.7,.8);roofDrops.push({o,x,offset:i*.071});
+}
+// rain lines as an efficiently updated GPU buffer
+const COUNT=900, coords=new Float32Array(COUNT*6),rainSeed=new Float32Array(COUNT*3);
+for(let i=0;i<COUNT;i++){
+ rainSeed[i*3]=Math.random()*16-8; rainSeed[i*3+1]=Math.random()*13+.1;rainSeed[i*3+2]=Math.random()*16-8;
+}
+let rainGeo=new T.BufferGeometry();rainGeo.setAttribute('position',new T.BufferAttribute(coords,3).setUsage(T.DynamicDrawUsage));
+let rainLines=new T.LineSegments(rainGeo,new T.LineBasicMaterial({color:0xc2d9f2,transparent:true,opacity:.42,depthWrite:false}));rainLines.frustumCulled=false;root.add(rainLines);
+const rippleMat=new T.MeshBasicMaterial({color:0xc3e4f2,transparent:true,opacity:.38,depthWrite:false,side:T.DoubleSide});
+let ripples=[];for(let i=0;i<30;i++){
+ const r=mesh(new T.RingGeometry(.13,.147,34),rippleMat.clone());r.rotation.x=-PI/2;
+ const xx=Math.random()*15-7.5,zz=Math.random()*15-7.5;
+ let inside=xx>-5.75&&xx<2.48&&zz>-5.71&&zz<1.5;
+ r.position.set(inside?4.8:xx,.489,inside?3.8:zz);
+ ripples.push({r,offset:Math.random(),duration:1.15+Math.random()*2});
+}
+// soft fake neon reflections, translucent marks on wet asphalt
+const reflMat=(col,op)=>new T.MeshBasicMaterial({color:col,transparent:true,opacity:op,blending:T.AdditiveBlending,depthWrite:false,side:T.DoubleSide});
+for(let k=0;k<14;k++){
+ let x=-5.5+k*.56;
+ let o=plane(.23,1.7+Math.random()*1.2,x,.488,3.96+Math.random()*1.5,reflMat(k%3===0?0x70d6e1:0xe8b38a,.045));
+ o.rotation.z=(Math.random()-.5)*.25;
+}
+for(let k=0;k<10;k++)plane(.19,1.4,4.2+k*.31,.487,-4.7+k*.65,reflMat(0x7bd3d7,.035));
+// tiny overhead particles and gentle atmosphere
+for(let i=0;i<38;i++){
+ let x=Math.random()*16-8,y=Math.random()*5+2,z=Math.random()*15-7.5;
+ if(i%3===0)halo(x,y,z,.12,.12,0xb2d8ef,.16);
+}
+// POINTER: orbit freely, pinch to zoom, wheel to zoom. No visible GUI.
+const canvas=renderer.domElement;const active=new Map();let moved=false,pinchDistance=0, lastX=0,lastY=0;
+canvas.addEventListener('pointerdown',e=>{canvas.setPointerCapture(e.pointerId);active.set(e.pointerId,{x:e.clientX,y:e.clientY});if(active.size===1){lastX=e.clientX;lastY=e.clientY;}moved=true;},{passive:false});
+canvas.addEventListener('pointermove',e=>{
+ if(!active.has(e.pointerId))return;
+ active.set(e.pointerId,{x:e.clientX,y:e.clientY});let all=[...active.values()];
+ if(all.length>1){let d=Math.hypot(all[0].x-all[1].x,all[0].y-all[1].y);if(pinchDistance)desiredRadius=T.MathUtils.clamp(desiredRadius*pinchDistance/d,12.8,37);pinchDistance=d;lastX=e.clientX;lastY=e.clientY;return;}
+ desiredTheta-=(e.clientX-lastX)*.006;desiredPhi=T.MathUtils.clamp(desiredPhi+(e.clientY-lastY)*.005,.22,1.54);
+ lastX=e.clientX;lastY=e.clientY;
+},{passive:false});
+function end(e){active.delete(e.pointerId);pinchDistance=0;}
+canvas.addEventListener('pointerup',end);canvas.addEventListener('pointercancel',end);
+canvas.addEventListener('wheel',e=>{e.preventDefault();desiredRadius=T.MathUtils.clamp(desiredRadius*Math.exp(e.deltaY*.0007),12.8,37);},{passive:false});
+canvas.addEventListener('dblclick',()=>{desiredTheta=.79;desiredPhi=1.16;desiredRadius=23;targetLook.set(-.1,2.35,0);});
+function resized(){let aspect=innerWidth/innerHeight;let vert=aspect<.8?25:aspect<1.2?21:18.5;camera.left=-vert*aspect/2;camera.right=vert*aspect/2;camera.top=vert/2;camera.bottom=-vert/2;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);}
+addEventListener('resize',resized);resized();
+let last=performance.now(),elapsed=0;
+function animate(now){requestAnimationFrame(animate);let dt=Math.min((now-last)/1000,.05);last=now;elapsed+=dt;
+ theta+=(desiredTheta-theta)*.105;phi+=(desiredPhi-phi)*.105;radius+=(desiredRadius-radius)*.1;look.lerp(targetLook,.095);
+ camera.position.set(look.x+radius*Math.sin(phi)*Math.sin(theta),look.y+radius*Math.cos(phi),look.z+radius*Math.sin(phi)*Math.cos(theta));camera.lookAt(look);
+ // door gently slides open every ~12 seconds, stays open, then closes
+ let period=elapsed%12.8,open=period<2.7?0:period<4.1?(period-2.7)/1.4:period<7.0?1:period<8.5?1-(period-7)/1.5:0;
+ open=T.MathUtils.smoothstep(open,0,1);leftDoor.position.x=-1.05-open*.45;rightDoor.position.x=-.17+open*.45;
+ // intermittent slightly imperfect neon illumination
+ const flutter=Math.sin(elapsed*2.0)*.035+Math.sin(elapsed*11)*.015;
+ C.orange.emissiveIntensity=.65+flutter;C.cyan.emissiveIntensity=.82+flutter;
+ // traffic lamp cycles
+ let cycle=Math.floor(elapsed/6.6)%3;
+ sig.forEach((s,i)=>{s.material.emissiveIntensity=i===cycle?2.4:.01;});
+ // rain drop segments, skip volume occupied by the building to preserve interior readability
+ for(let i=0;i<COUNT;i++){
+ let a=i*3,x=rainSeed[a],y=rainSeed[a+1],z=rainSeed[a+2];
+ y-=dt*(6.8+(i%9)*.35);if(y<.53){y=10+Math.random()*5;x=Math.random()*16-8;z=Math.random()*16-8;}
+ let indoor=x>-5.75&&x<2.65&&z>-5.7&&z<1.5&&y<5.35;
+ rainSeed[a]=x;rainSeed[a+1]=y;rainSeed[a+2]=z;
+ let j=i*6; coords[j]=x;coords[j+1]=indoor?-20:y;coords[j+2]=z; coords[j+3]=x+.045;coords[j+4]=indoor?-20:y-.35-(i%4)*.09;coords[j+5]=z+.035;
+ }rainGeo.attributes.position.needsUpdate=true;
+ for(let i=0;i<roofDrops.length;i++){
+ let d=roofDrops[i],phase=(elapsed*.75+d.offset)%1,yy=3.68-1.5*phase;
+ d.o.position.set(d.x,yy,2.35);d.o.material.opacity=(1-phase)*.66;
+ }
+ for(let i=0;i<ripples.length;i++){
+ let r=ripples[i],phase=(elapsed/r.duration+r.offset)%1,s=.2+phase*2.55;
+ r.r.scale.set(s,s,s);r.r.material.opacity=(1-phase)*.25;
+ }
+ for(let i=0;i<trails.length;i++){
+ let v=trails[i];v.o.position.y=v.base-(elapsed*v.speed)%1; if(v.o.position.y<1.08)v.o.position.y+=2.27;
+ }
+ renderer.render(scene,camera);
+}
+requestAnimationFrame(animate);
+})();
+</script>
+</body>
+</html>
