@@ -4,12 +4,12 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no" />
 <meta name="theme-color" content="#11172c" />
-<title>雨の街角 · HOSHI MART</title>
+<title>雨の街角 · HOSHI MART — 夜景ディオラマ v2</title>
 <style>
   *{box-sizing:border-box} html,body{width:100%;height:100%;margin:0;overflow:hidden}
-  body{background:radial-gradient(ellipse at 53% 42%,#344260 0%,#18243d 45%,#0c1428 100%);touch-action:none;cursor:grab}
+  body{background:radial-gradient(ellipse at 50% 35%,#16243b 0%,#0a1529 52%,#050b17 100%);touch-action:none;cursor:grab}
   body:active{cursor:grabbing} canvas{display:block;width:100%;height:100%;outline:none}
-  body::after{content:"";position:fixed;inset:0;pointer-events:none;box-shadow:inset 0 0 140px 25px #080e2059}
+  body::after{content:"";position:fixed;inset:0;pointer-events:none;box-shadow:inset 0 0 175px 42px #04081288}
 </style>
 </head>
 <body>
@@ -20,23 +20,26 @@
 'use strict';
 if(!window.THREE){document.body.style.background='#10182b';console.error('Three.js CDN was not reachable.');return;}
 const T=THREE;
-const scene=new T.Scene(); scene.background=new T.Color(0x131d35); scene.fog=new T.FogExp2(0x131d35,.015);
+const scene=new T.Scene(); scene.background=new T.Color(0x0c1528); scene.fog=new T.FogExp2(0x0c1528,.009);
 const renderer=new T.WebGLRenderer({antialias:true,alpha:true,powerPreference:'high-performance'});
 renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,1.7));renderer.setSize(innerWidth,innerHeight);
 renderer.shadowMap.enabled=true; renderer.shadowMap.type=T.PCFSoftShadowMap;
-renderer.toneMapping=T.ACESFilmicToneMapping; renderer.toneMappingExposure=1.38;
+renderer.toneMapping=T.ACESFilmicToneMapping; renderer.toneMappingExposure=1.13;
 renderer.outputColorSpace=T.SRGBColorSpace;
-renderer.setClearColor(0x15213b,1);
+renderer.setClearColor(0x0c1528,1);
 document.body.appendChild(renderer.domElement);
 const camera=new T.OrthographicCamera(-13,13,13,-13,.1,110);
-let theta=.79,phi=1.16,desiredTheta=theta,desiredPhi=phi,radius=23,desiredRadius=radius;
-let look=new T.Vector3(-.1,2.35,0),targetLook=look.clone();
+// Elevated 3/4 isometric-like orbit: clearly reveals both streets and the roof.
+const DEFAULT_THETA=.75,DEFAULT_PHI=.77;
+let theta=DEFAULT_THETA,phi=DEFAULT_PHI,desiredTheta=theta,desiredPhi=phi;
+const orbitRadius=27; let desiredZoom=1,zoom=1;
+let look=new T.Vector3(0,2.65,0),targetLook=look.clone();
 const root=new T.Group();scene.add(root);
 const PI=Math.PI, TAU=PI*2;
 const mat=(c,rough=.8,metal=0)=>new T.MeshStandardMaterial({color:c,roughness:rough,metalness:metal});
 const em=(c,intensity=1,rough=.5)=>new T.MeshStandardMaterial({color:c,emissive:c,emissiveIntensity:intensity,roughness:rough});
 const glass=new T.MeshPhysicalMaterial({color:0xc2eaff,transparent:true,opacity:.19,metalness:.08,roughness:.07,depthWrite:false,side:T.DoubleSide});
-const C={base:mat('#26344b',.55),edge:mat('#141b2d',.35),asphalt:mat('#26394c',.24,.22),pavement:mat('#667280',.68),line:mat('#ded8ba',.32),wall:mat('#d5d0c5'),tile:mat('#e5e2d2',.63),frame:mat('#536677',.3,.5),darkFrame:mat('#252d3f',.39,.35),white:mat('#fff7dc',.55),navy:mat('#0b4165',.4),roof:mat('#35506a',.54),orange:em('#ffbd79',.65),cyan:em('#58dcee',.82),pink:em('#fa8baf',.4),green:mat('#4b8f80',.47),yellow:em('#ffce70',.5),wet:new T.MeshPhysicalMaterial({color:0x4c637b,metalness:.37,roughness:.16,transparent:true,opacity:.42,depthWrite:false}),rubber:mat('#1b2634')};
+const C={base:mat('#222631',.62),edge:mat('#0b111e',.44),asphalt:mat('#1b2734',.13,.45),pavement:mat('#57616a',.78),line:mat('#c8c8ba',.38),wall:mat('#c8c9c2'),tile:mat('#e2dccc',.60),frame:mat('#465767',.29,.43),darkFrame:mat('#28313a',.42,.28),white:mat('#fff0ca',.52),navy:mat('#21475c',.47),roof:mat('#303942',.65),orange:em('#ffbd79',.65),cyan:em('#58dcee',.82),pink:em('#fa8baf',.4),green:mat('#4b8f80',.47),yellow:em('#ffce70',.5),wet:new T.MeshPhysicalMaterial({color:0x4c637b,metalness:.37,roughness:.16,transparent:true,opacity:.42,depthWrite:false}),rubber:mat('#1b2634')};
 const bGeo=new T.BoxGeometry(1,1,1), planeGeo=new T.PlaneGeometry(1,1);
 const cylinderCache={};
 function mesh(g,m,parent=root){let o=new T.Mesh(g,m);parent.add(o);return o;}
@@ -57,12 +60,15 @@ function signTexture(text,sub='',options={}){let W=1024,H=256,c=document.createE
  const tx=new T.CanvasTexture(c);tx.colorSpace=T.SRGBColorSpace;tx.anisotropy=8;return tx;}
 function panel(w,h,x,y,z,text,sub='',opts={}){let t=signTexture(text,sub,opts);let m=new T.MeshBasicMaterial({map:t,side:T.DoubleSide,transparent:false});let o=plane(w,h,x,y,z,m,0);o.rotation.y=opts.rotY||0;return o;}
 function addLight(c,intensity,x,y,z,distance=10,shadow=false){let l=new T.PointLight(c,intensity,distance,2);l.position.set(x,y,z);if(shadow){l.castShadow=true;l.shadow.mapSize.set(1024,1024);l.shadow.bias=-.0004;l.shadow.radius=3;}scene.add(l);return l;}
-scene.add(new T.HemisphereLight(0xadc6f7,0x34374c,1.65));
-let moon=new T.DirectionalLight(0x9cb6f9,2.1);moon.position.set(-11,20,15);moon.castShadow=true;moon.shadow.mapSize.set(2048,2048);moon.shadow.camera.left=-14;moon.shadow.camera.right=14;moon.shadow.camera.top=14;moon.shadow.camera.bottom=-14;moon.shadow.bias=-.0003;scene.add(moon);
+scene.add(new T.HemisphereLight(0x7593c0,0x202136,.87));
+let moon=new T.DirectionalLight(0x8dadd6,.94);moon.position.set(-11,20,15);moon.castShadow=true;moon.shadow.mapSize.set(2048,2048);moon.shadow.camera.left=-14;moon.shadow.camera.right=14;moon.shadow.camera.top=14;moon.shadow.camera.bottom=-14;moon.shadow.bias=-.0003;scene.add(moon);
 // THE SQUARE COLLECTIBLE BASE
 box(16.1,.65,16.1,0,.015,0,C.edge);
-box(16.23,.12,16.23,0,.32,0,em('#3c586e',.12));
+box(16.23,.12,16.23,0,.32,0,mat('#576070',.42,.16));
 box(15.94,.085,15.94,0,.42,0,C.asphalt);
+// collector's plinth: understated brass separator below the streets
+box(16.12,.045,16.12,0,-.16,0,mat('#977a52',.42,.55));
+box(16.07,.10,16.07,0,-.34,0,mat('#111421',.62));
 // illuminated perimeter detailing
 for(let z of [-8.06,8.06])box(16.15,.026,.035,0,.33,z,em('#8ba1a6',.22));
 for(let x of [-8.06,8.06])box(.035,.026,16.15,x,.33,0,em('#8ba1a6',.22));
@@ -125,27 +131,65 @@ function doorPart(parent){box(.82,2.98,.09,0,2.44,1.54,C.darkFrame,parent);box(.
 box(.74,.048,.06,0,2.27,1.66,em('#e5e7d9',.18),parent);box(.17,.045,.13,.22,2.26,1.69,em('#d9e8e5',.4),parent);}
 doorPart(leftDoor);doorPart(rightDoor);
 box(2.05,.12,.30,-.61,4.0,1.47,C.darkFrame,shop);
-// ceiling, fascia, layered rooftop silhouette
-box(8.65,.27,7.65,-1.62,4.45,-2.08,mat('#e8e4d4'),shop);
-box(8.85,.32,7.85,-1.62,4.70,-2.06,C.roof,shop);
-box(8.95,.19,7.94,-1.62,4.92,-2.06,C.darkFrame,shop);
-box(9.08,.10,7.98,-1.62,5.07,-2.06,mat('#476078'),shop);
-for(let z of [-5.95,1.78])box(9,.19,.18,-1.62,5.17,z,mat('#314459'),shop);
-for(let x of [-6.1,2.9])box(.17,.19,7.82,x,5.17,-2.08,mat('#314459'),shop);
+// Thin stepped roof with surface drainage and miniature HVAC; avoids a giant empty blue slab.
+box(8.65,.23,7.65,-1.62,4.43,-2.08,mat('#d4d5cd'),shop);
+box(8.85,.20,7.86,-1.62,4.62,-2.06,C.roof,shop);
+box(8.97,.12,7.97,-1.62,4.78,-2.06,mat('#282f39'),shop);
+// slim weathered parapet, gutters and white coping (no tall roof block)
+for(let z of [-6.03,1.91]){
+ box(9.02,.19,.115,-1.62,4.96,z,mat('#7a8994',.50),shop);
+ box(9.02,.047,.15,-1.62,5.07,z,mat('#b9bcb4',.6),shop);
+}
+for(let x of [-6.10,2.86]){
+ box(.115,.19,8,x,4.96,-2.06,mat('#7b8994',.55),shop);
+ box(.15,.045,8,x,5.07,-2.06,mat('#b9bcb4',.65),shop);
+}
+// flat roof seam lines, irregular pools and expansion joints
+const roofSeam=mat('#637077',.65),roofWet=new T.MeshBasicMaterial({color:0x8b9caa,transparent:true,opacity:.055,depthWrite:false});
+for(let z=-5.45;z<1.7;z+=1.28)box(8.35,.012,.018,-1.62,4.854,z,roofSeam,shop);
+for(let x=-5.55;x<2.45;x+=2.3)box(.014,.012,7.1,x,4.855,-2.06,roofSeam,shop);
+for(let i=0;i<14;i++){
+ let x=-5.6+(i*1.37)%7.8,z=-5.7+(i*2.03)%7.1;
+ let wet=plane(.3+(i%4)*.31,.23+(i%3)*.16,x,4.865,z,roofWet.clone(),-PI/2,shop);wet.rotation.z=i*.54;
+}
+// equipment platform / housings / condenser fans / rain caps
+const roofSteel=mat('#79888d',.5,.38),roofLight=mat('#b8bfc0',.62,.15),ventDark=mat('#374953',.55);
+function roofAC(x,z,w=1.15,d=.72){
+ box(w,.11,d,x,4.89,z,roofSteel,shop);box(w-.1,.48,d-.08,x,5.17,z,roofLight,shop);
+ box(w-.14,.28,.032,x,5.18,z+d/2-.018,ventDark,shop);
+ for(let xx=x-w/2+.15;xx<x+w/2-.05;xx+=.12)box(.023,.25,.026,xx,5.18,z+d/2+.001,roofSteel,shop);
+ for(let side of [-1,1]){let fan=mesh(new T.TorusGeometry(.18,.024,6,20),roofSteel,shop);fan.position.set(x+side*.22,5.437,z);fan.rotation.x=PI/2;
+   for(let k=0;k<4;k++){let blade=box(.31,.012,.064,x+side*.22,5.438,z,ventDark,shop);blade.rotation.y=k*Math.PI/4;}}
+}
+roofAC(-4.55,-4.55,1.47,.90);roofAC(1.02,-4.83,1.14,.84);
+box(2.30,.09,.12,-1.55,4.96,-5.08,roofSteel,shop);
+box(.10,.09,1.43,-.42,4.96,-4.35,roofSteel,shop);
+// cylindrical ventilation towers, protective covers, roof water tank
+for(let [x,z,h] of [[-3.07,-4.7,.76],[1.4,-1.5,.44]]){
+ cy(.25,.28,h,x,4.90+h/2,z,roofSteel,14,shop);cy(.40,.40,.06,x,4.94+h,z,roofLight,16,shop);
+ for(let t=0;t<8;t++){let a=t*TAU/8;box(.07,.17,.04,x+Math.cos(a)*.28,5.02+h,z+Math.sin(a)*.28,ventDark,shop);}
+}
+box(.91,.74,.96,-4.15,5.18,-1.56,mat('#5f7180'),shop);
+for(let i=0;i<6;i++)box(.032,.37,.92,-4.51+i*.14,5.24,-1.56,roofSteel,shop);
+// thin rainwater downspout tracing the roofline to the street
+for(let [x,z] of [[-5.88,1.65],[2.71,-5.72]]){
+ rod([x,4.87,z],[x,1.01,z],.035,roofSteel,shop);cy(.092,.092,.10,x,1.05,z,ventDark,12,shop);
+}
 // large facade sign and brand stripes, all part of model, never UI
-box(8.75,.77,.22,-1.63,4.18,1.62,em('#ffedc0',.75),shop);
-box(8.75,.11,.25,-1.63,4.55,1.75,em('#ff775b',.78),shop);
-box(8.75,.11,.25,-1.63,3.79,1.75,em('#48d0bb',.78),shop);
-panel(6.6,.60,-1.68,4.19,1.748,'HOSHI MART','ほしマート · 24 HOURS',{bg:'#fff8df',fg:'#204e6a',subcolor:'#518178',fontSize:136});
+box(8.75,.67,.22,-1.63,4.09,1.62,em('#ffe2a5',1.12),shop);
+box(8.75,.075,.25,-1.63,4.47,1.75,em('#ed987c',.65),shop);
+box(8.75,.075,.25,-1.63,3.72,1.75,em('#55b6a7',.52),shop);
+panel(6.6,.57,-1.68,4.10,1.754,'HOSHI MART','ほしマート · 24 HOURS',{bg:'#fff1d4',fg:'#31566b',subcolor:'#63817b',fontSize:130});
 // side blade sign
 box(.24,1.65,1.36,2.93,4.01,.78,em('#f8edd6',.7),shop);
 let sideLabel=panel(1.25,1.42,3.07,4.05,.77,'24','OPEN',{bg:'#fff5dd',fg:'#3b7185',fontSize:210});sideLabel.rotation.y=PI/2;
 // atmospheric glow from lamps and interior fixtures
 for(let x of [-4.7,-2.65,-.62,1.40]){box(1.20,.050,.62,x,4.292,-2.24,em('#fff0cc',1.9),shop);halo(x,3.72,-2.25,2.8,1.8,0xffc992,.12,shop);}
-addLight(0xffc991,10.0,-2.5,3.35,-1.5,10,false);addLight(0xffdcac,6.3,1.0,3.3,-3.2,7,false);
+addLight(0xffc789,12.0,-2.5,3.35,-1.5,9,false);addLight(0xffe1ad,7.5,1.0,3.3,-3.2,7,false);
 // front eaves and entrance mat
-box(9.05,.14,1.0,-1.62,3.80,1.92,C.roof,shop);
-box(9.02,.056,.10,-1.62,3.73,2.37,em('#6f9fa5',.45),shop);
+box(9.05,.115,1.14,-1.62,3.70,1.96,mat('#41474b',.65),shop);
+box(9.02,.035,.10,-1.62,3.63,2.47,em('#ffdbad',1.10),shop);
+for(let x=-5.53;x<2.5;x+=1.43)box(1.05,.025,.13,x,3.63,2.36,em('#ffe6b6',1.28),shop);
 box(2.08,.023,.73,-.62,.64,2.01,mat('#284456'),root);
 for(let i=0;i<11;i++)box(.026,.025,.66,-1.55+i*.19,.658,2.01,mat('#416575'));
 // back wall posters, colored ads, price cards
@@ -254,6 +298,33 @@ for(let i=0;i<5;i++){
 // small utility / information board close to alley
 box(.12,1.55,1.19,3.37,1.52,-.31,mat('#425368'));
 let notice=panel(1.05,1.35,3.449,1.58,-.31,'まち','お知らせ',{bg:'#f1e0bc',fg:'#657780',subcolor:'#697c7c',fontSize:160});notice.rotation.y=PI/2;
+// Street paint and lived-in urban details: poles, reflections, parking wheel blocks.
+const roadMark=mat('#b9c6c2',.37);
+for(let i=0;i<3;i++)box(1.10,.013,.042,-5.62+i*2.18,.481,7.09,roadMark);
+for(let i=0;i<3;i++){
+ const z=-5.8+i*1.55;
+ box(.65,.07,.20,-7.23,.53,z,mat('#757b78'));
+ box(.65,.01,.04,-7.23,.576,z+.03,mat('#e4cf92'));
+}
+// discreet planters frame two edges without cluttering the store entrance
+function edgePlanter(x,z,sz=.58){
+ box(sz,.32,sz,x,.69,z,mat('#333e41',.66));
+ for(let n=0;n<6;n++){
+  const a=n*TAU/6,rr=sz*.30;
+  sphere(.14+((n+2)%3)*.035,x+Math.cos(a)*rr,1.00+(n%3)*.065,z+Math.sin(a)*rr,mat(n%2?'#53776c':'#365d58'),9);
+ }
+}
+for(let x=-7.08;x<1.65;x+=1.05)edgePlanter(x,-7.33,.52);
+for(let z=-5.82;z<1.2;z+=1.04)edgePlanter(7.36,z,.49);
+// A few street studs on the wet pedestrian curb
+for(let x=-7.15;x<2.55;x+=1.2){
+ cy(.048,.048,.033,x,.655,3.02,em('#c1ab7d',.19),9);
+}
+// Public street wall poster, luminous vertical kanban seen at three-quarter angle
+box(.12,1.5,.74,3.43,2.05,-4.96,mat('#304255'));
+let sideAd=panel(.65,1.40,3.52,2.05,-4.96,'新商品','',{bg:'#c9a67e',fg:'#49565a',fontSize:151});sideAd.rotation.y=PI/2;
+// Tiny red tail-lamp-like marker on alley railing
+box(.16,.11,.1,3.58,1.08,-6.46,em('#ed8270',.3));
 // parked bicycle, no people
 const bike=new T.Group();root.add(bike);bike.position.set(-4.91,.45,2.31);
 const bikeMetal=mat('#9dbac0',.25,.58),bikeBlack=mat('#1d2934',.85);
@@ -343,12 +414,12 @@ const roofDrops=[];for(let i=0;i<30;i++){
  let o=mesh(new T.SphereGeometry(.025,5,5),m);o.scale.set(.8,2.7,.8);roofDrops.push({o,x,offset:i*.071});
 }
 // rain lines as an efficiently updated GPU buffer
-const COUNT=900, coords=new Float32Array(COUNT*6),rainSeed=new Float32Array(COUNT*3);
+const COUNT=1100, coords=new Float32Array(COUNT*6),rainSeed=new Float32Array(COUNT*3);
 for(let i=0;i<COUNT;i++){
  rainSeed[i*3]=Math.random()*16-8; rainSeed[i*3+1]=Math.random()*13+.1;rainSeed[i*3+2]=Math.random()*16-8;
 }
 let rainGeo=new T.BufferGeometry();rainGeo.setAttribute('position',new T.BufferAttribute(coords,3).setUsage(T.DynamicDrawUsage));
-let rainLines=new T.LineSegments(rainGeo,new T.LineBasicMaterial({color:0xc2d9f2,transparent:true,opacity:.42,depthWrite:false}));rainLines.frustumCulled=false;root.add(rainLines);
+let rainLines=new T.LineSegments(rainGeo,new T.LineBasicMaterial({color:0xc2d9f2,transparent:true,opacity:.30,depthWrite:false}));rainLines.frustumCulled=false;root.add(rainLines);
 const rippleMat=new T.MeshBasicMaterial({color:0xc3e4f2,transparent:true,opacity:.38,depthWrite:false,side:T.DoubleSide});
 let ripples=[];for(let i=0;i<30;i++){
  const r=mesh(new T.RingGeometry(.13,.147,34),rippleMat.clone());r.rotation.x=-PI/2;
@@ -365,6 +436,25 @@ for(let k=0;k<14;k++){
  o.rotation.z=(Math.random()-.5)*.25;
 }
 for(let k=0;k<10;k++)plane(.19,1.4,4.2+k*.31,.487,-4.7+k*.65,reflMat(0x7bd3d7,.035));
+// Soft painterly reflected glow in puddles (camera-independent planes, not screen UI).
+function glowPatchTexture(){
+ const cv=document.createElement('canvas');cv.width=256;cv.height=256;
+ const cx=cv.getContext('2d'),g=cx.createRadialGradient(128,128,2,128,128,123);
+ g.addColorStop(0,'rgba(255,255,255,.83)');g.addColorStop(.25,'rgba(255,255,255,.33)');
+ g.addColorStop(.70,'rgba(255,255,255,.06)');g.addColorStop(1,'rgba(255,255,255,0)');
+ cx.fillStyle=g;cx.fillRect(0,0,256,256);return new T.CanvasTexture(cv);
+}
+const patchTex=glowPatchTexture(),glowPatches=[];
+function glowPatch(x,z,w,d,color,opacity){
+ let m=new T.MeshBasicMaterial({map:patchTex,color,transparent:true,opacity,blending:T.AdditiveBlending,depthWrite:false,side:T.DoubleSide});
+ let o=plane(w,d,x,.494,z,m);o.rotation.z=.09*Math.sin(x*2.3);glowPatches.push(o);return o;
+}
+for(let k=0;k<8;k++)glowPatch(-5.0+k*.89,3.72+(k%3)*.47,.7,2.8+(k%3)*.9,0xffbd7f,.12);
+glowPatch(-5.73,4.90,2.0,3.5,0xffd5a8,.18);
+glowPatch(2.55,4.27,1.7,3.4,0x66cae1,.24);
+glowPatch(5.07,1.21,1.4,2.8,0x75b2be,.12);
+glowPatch(6.26,-2.80,1.5,3.7,0x6aaec6,.10);
+for(let k=0;k<4;k++)glowPatch(-4.2+k*1.72,5.35,1.1,2.9,0xe5a87c,.06);
 // tiny overhead particles and gentle atmosphere
 for(let i=0;i<38;i++){
  let x=Math.random()*16-8,y=Math.random()*5+2,z=Math.random()*15-7.5;
@@ -376,20 +466,21 @@ canvas.addEventListener('pointerdown',e=>{canvas.setPointerCapture(e.pointerId);
 canvas.addEventListener('pointermove',e=>{
  if(!active.has(e.pointerId))return;
  active.set(e.pointerId,{x:e.clientX,y:e.clientY});let all=[...active.values()];
- if(all.length>1){let d=Math.hypot(all[0].x-all[1].x,all[0].y-all[1].y);if(pinchDistance)desiredRadius=T.MathUtils.clamp(desiredRadius*pinchDistance/d,12.8,37);pinchDistance=d;lastX=e.clientX;lastY=e.clientY;return;}
- desiredTheta-=(e.clientX-lastX)*.006;desiredPhi=T.MathUtils.clamp(desiredPhi+(e.clientY-lastY)*.005,.22,1.54);
+ if(all.length>1){let d=Math.hypot(all[0].x-all[1].x,all[0].y-all[1].y);if(pinchDistance)desiredZoom=T.MathUtils.clamp(desiredZoom*d/pinchDistance,.55,2.4);pinchDistance=d;lastX=e.clientX;lastY=e.clientY;return;}
+ desiredTheta-=(e.clientX-lastX)*.006;desiredPhi=T.MathUtils.clamp(desiredPhi+(e.clientY-lastY)*.005,.28,1.42);
  lastX=e.clientX;lastY=e.clientY;
 },{passive:false});
 function end(e){active.delete(e.pointerId);pinchDistance=0;}
 canvas.addEventListener('pointerup',end);canvas.addEventListener('pointercancel',end);
-canvas.addEventListener('wheel',e=>{e.preventDefault();desiredRadius=T.MathUtils.clamp(desiredRadius*Math.exp(e.deltaY*.0007),12.8,37);},{passive:false});
-canvas.addEventListener('dblclick',()=>{desiredTheta=.79;desiredPhi=1.16;desiredRadius=23;targetLook.set(-.1,2.35,0);});
-function resized(){let aspect=innerWidth/innerHeight;let vert=aspect<.8?25:aspect<1.2?21:18.5;camera.left=-vert*aspect/2;camera.right=vert*aspect/2;camera.top=vert/2;camera.bottom=-vert/2;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);}
+canvas.addEventListener('wheel',e=>{e.preventDefault();desiredZoom=T.MathUtils.clamp(desiredZoom*Math.exp(-e.deltaY*.001),.55,2.4);},{passive:false});
+canvas.addEventListener('dblclick',()=>{desiredTheta=DEFAULT_THETA;desiredPhi=DEFAULT_PHI;desiredZoom=1;targetLook.set(0,2.65,0);});
+function resized(){let aspect=innerWidth/innerHeight;let vert=aspect<.8?27:aspect<1.2?24:21.5;camera.left=-vert*aspect/2;camera.right=vert*aspect/2;camera.top=vert/2;camera.bottom=-vert/2;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);}
 addEventListener('resize',resized);resized();
 let last=performance.now(),elapsed=0;
 function animate(now){requestAnimationFrame(animate);let dt=Math.min((now-last)/1000,.05);last=now;elapsed+=dt;
- theta+=(desiredTheta-theta)*.105;phi+=(desiredPhi-phi)*.105;radius+=(desiredRadius-radius)*.1;look.lerp(targetLook,.095);
- camera.position.set(look.x+radius*Math.sin(phi)*Math.sin(theta),look.y+radius*Math.cos(phi),look.z+radius*Math.sin(phi)*Math.cos(theta));camera.lookAt(look);
+ theta+=(desiredTheta-theta)*.105;phi+=(desiredPhi-phi)*.105;zoom+=(desiredZoom-zoom)*.12;look.lerp(targetLook,.095);
+ camera.zoom=zoom;camera.updateProjectionMatrix();
+ camera.position.set(look.x+orbitRadius*Math.sin(phi)*Math.sin(theta),look.y+orbitRadius*Math.cos(phi),look.z+orbitRadius*Math.sin(phi)*Math.cos(theta));camera.lookAt(look);
  // door gently slides open every ~12 seconds, stays open, then closes
  let period=elapsed%12.8,open=period<2.7?0:period<4.1?(period-2.7)/1.4:period<7.0?1:period<8.5?1-(period-7)/1.5:0;
  open=T.MathUtils.smoothstep(open,0,1);leftDoor.position.x=-1.05-open*.45;rightDoor.position.x=-.17+open*.45;
@@ -417,6 +508,9 @@ function animate(now){requestAnimationFrame(animate);let dt=Math.min((now-last)/
  }
  for(let i=0;i<trails.length;i++){
  let v=trails[i];v.o.position.y=v.base-(elapsed*v.speed)%1; if(v.o.position.y<1.08)v.o.position.y+=2.27;
+ }
+ for(let i=0;i<glowPatches.length;i++){
+  glowPatches[i].material.opacity*=(1+.0003*Math.sin(elapsed*2+i*.6));
  }
  renderer.render(scene,camera);
 }
